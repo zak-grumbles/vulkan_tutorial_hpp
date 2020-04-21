@@ -60,6 +60,8 @@ VkApp::VkApp(int width, int height, std::string title, bool validation_enabled /
 
 VkApp::~VkApp() {
 
+	device_.destroyRenderPass(render_pass_);
+
 	for (vk::ImageView& view : swapchain_image_views_) {
 		device_.destroyImageView(view);
 	}
@@ -98,6 +100,7 @@ void VkApp::init_vulkan() {
 	init_logical_device();
 	init_swapchain();
 	init_image_views();
+	init_render_pass();
 }
 
 void VkApp::init_instance() {
@@ -438,4 +441,57 @@ void VkApp::init_image_views() {
 
 		swapchain_image_views_.push_back(device_.createImageView(info));
 	}
+}
+
+void VkApp::init_render_pass() {
+	vk::AttachmentDescription color_attachment(
+		{},
+		swap_format_.format,
+		vk::SampleCountFlagBits::e1,
+		vk::AttachmentLoadOp::eClear,
+		vk::AttachmentStoreOp::eStore,
+		vk::AttachmentLoadOp::eDontCare,
+		vk::AttachmentStoreOp::eDontCare,
+		vk::ImageLayout::eUndefined,
+		vk::ImageLayout::ePresentSrcKHR
+	);
+
+	vk::AttachmentReference color_ref(
+		0,
+		vk::ImageLayout::eColorAttachmentOptimal
+	);
+
+	vk::SubpassDescription subpass(
+		{},
+		vk::PipelineBindPoint::eGraphics,
+		0,
+		nullptr,
+		1,
+		&color_ref
+	);
+
+	vk::SubpassDependency dep(
+		{},
+		{},
+		vk::PipelineStageFlagBits::eColorAttachmentOutput,
+		vk::PipelineStageFlagBits::eColorAttachmentOutput,
+		{},
+		vk::AccessFlagBits::eColorAttachmentWrite
+	);
+
+	vk::RenderPassCreateInfo info(
+		{},
+		1,
+		&color_attachment,
+		1,
+		&subpass,
+		1,
+		&dep
+	);
+
+	render_pass_ = device_.createRenderPass(info);
+}
+
+void VkApp::init_pipeline() {
+
 }

@@ -47,6 +47,8 @@ private:
 	std::vector<vk::Image> swapchain_images_;
 	std::vector<vk::ImageView> swapchain_image_views_;
 
+	vk::RenderPass render_pass_;
+
 public:
 	VkApp(int width, int height, std::string title, bool validation_enabled=false);
 	~VkApp();
@@ -71,6 +73,8 @@ private:
 	void init_logical_device();
 	void init_swapchain();
 	void init_image_views();
+	void init_render_pass();
+	void init_pipeline();
 
 	std::vector<const char*> get_required_exts() const noexcept;
 
