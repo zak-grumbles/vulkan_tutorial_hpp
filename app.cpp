@@ -1,6 +1,7 @@
 #define NOMINMAX
 #include "app.h"
 
+#include <algorithm>
 #include <iostream>
 #include <fstream>
 #include <set>
@@ -79,6 +80,10 @@ VkApp::VkApp(int width, int height, std::string title, bool validation_enabled /
 
 VkApp::~VkApp() {
 
+	for (auto framebuf : swap_framebuffers_) {
+		device_.destroyFramebuffer(framebuf);
+	}
+
 	device_.destroyPipeline(graphics_pipeline_);
 
 	device_.destroyPipelineLayout(pipeline_layout_);
@@ -125,6 +130,7 @@ void VkApp::init_vulkan() {
 	init_image_views();
 	init_render_pass();
 	init_pipeline();
+	init_framebuffers();
 }
 
 void VkApp::init_instance() {
@@ -647,6 +653,30 @@ void VkApp::init_pipeline() {
 
 	device_.destroyShaderModule(frag_module);
 	device_.destroyShaderModule(vert_module);
+}
+
+void VkApp::init_framebuffers() {
+	swap_framebuffers_.reserve(swapchain_image_views_.size());
+
+	std::transform(swapchain_image_views_.begin(), swapchain_image_views_.end(), std::back_inserter(swap_framebuffers_),
+		[this](vk::ImageView view) -> vk::Framebuffer {
+			vk::ImageView attachments[] = {
+				view
+			};
+
+			vk::FramebufferCreateInfo framebuf_info(
+				{},
+				render_pass_,
+				1,
+				attachments,
+				swap_extent_.width,
+				swap_extent_.height,
+				1
+			);
+
+			return device_.createFramebuffer(framebuf_info);
+		}
+	);
 }
 
 vk::ShaderModule VkApp::create_shader_module(std::vector<char> code) {

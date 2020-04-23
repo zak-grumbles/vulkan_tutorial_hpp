@@ -51,6 +51,8 @@ private:
 	vk::PipelineLayout pipeline_layout_;
 	vk::Pipeline graphics_pipeline_;
 
+	std::vector<vk::Framebuffer> swap_framebuffers_;
+
 public:
 	VkApp(int width, int height, std::string title, bool validation_enabled=false);
 	~VkApp();
@@ -77,6 +79,7 @@ private:
 	void init_image_views();
 	void init_render_pass();
 	void init_pipeline();
+	void init_framebuffers();
 
 	std::vector<const char*> get_required_exts() const noexcept;
 
