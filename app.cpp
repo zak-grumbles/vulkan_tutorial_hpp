@@ -2,6 +2,7 @@
 #include "app.h"
 
 #include <iostream>
+#include <fstream>
 #include <set>
 
 const int kMaxFramesInFlight = 2;
@@ -44,6 +45,24 @@ void destroy_dbg_utils_messenger(
 	}
 }
 
+std::vector<char> read_file(const std::string& filename) {
+	std::ifstream file(filename, std::ios::ate | std::ios::binary);
+
+	if (!file.is_open()) {
+		throw std::runtime_error("Unable to open file");
+	}
+
+	size_t size = (size_t)file.tellg();
+	std::vector<char> buf(size);
+
+	file.seekg(0);
+	file.read(buf.data(), size);
+
+	file.close();
+
+	return buf;
+}
+
 VkApp::VkApp(int width, int height, std::string title, bool validation_enabled /*= false*/) {
 	validation_enabled_ = validation_enabled;
 
@@ -59,6 +78,10 @@ VkApp::VkApp(int width, int height, std::string title, bool validation_enabled /
 }
 
 VkApp::~VkApp() {
+
+	device_.destroyPipeline(graphics_pipeline_);
+
+	device_.destroyPipelineLayout(pipeline_layout_);
 
 	device_.destroyRenderPass(render_pass_);
 
@@ -101,6 +124,7 @@ void VkApp::init_vulkan() {
 	init_swapchain();
 	init_image_views();
 	init_render_pass();
+	init_pipeline();
 }
 
 void VkApp::init_instance() {
@@ -494,4 +518,145 @@ void VkApp::init_render_pass() {
 
 void VkApp::init_pipeline() {
 
+	auto vert_code = read_file("vert.spv");
+	vk::ShaderModule vert_module = create_shader_module(vert_code);
+	vk::PipelineShaderStageCreateInfo vert_stage(
+		{},
+		vk::ShaderStageFlagBits::eVertex,
+		vert_module,
+		"main"
+	);
+
+	auto frag_code = read_file("frag.spv");
+	vk::ShaderModule frag_module = create_shader_module(frag_code);
+	vk::PipelineShaderStageCreateInfo frag_stage(
+		{},
+		vk::ShaderStageFlagBits::eFragment,
+		frag_module,
+		"main"
+	);
+
+	vk::PipelineShaderStageCreateInfo stages[] = {
+		vert_stage,
+		frag_stage
+	};
+
+	// Describes how vertex data is passed into vertex shader
+	vk::PipelineVertexInputStateCreateInfo vert_input(
+		{},
+		0,
+		nullptr,
+		0,
+		nullptr
+	);
+
+	// Describes geometry drawn from vertices
+	// How to "Assemble" the vertices
+	vk::PipelineInputAssemblyStateCreateInfo assembly(
+		{},
+		vk::PrimitiveTopology::eTriangleList,
+		VK_FALSE
+	);
+
+	vk::Viewport viewport(
+		0.0f,
+		0.0f,
+		(float)swap_extent_.width,
+		(float)swap_extent_.height,
+		0.0f,
+		1.0f
+	);
+
+	vk::Offset2D scissor_offset = { 0, 0 };
+	vk::Rect2D scissor(
+		scissor_offset,
+		swap_extent_
+	);
+
+	// Combines viewport & scissor into one object
+	vk::PipelineViewportStateCreateInfo vp_state(
+		{},
+		1,
+		&viewport,
+		1,
+		&scissor
+	);
+
+	vk::PipelineRasterizationStateCreateInfo rasterizer(
+		{},
+		VK_FALSE,
+		VK_FALSE,
+		vk::PolygonMode::eFill,
+		vk::CullModeFlagBits::eBack,
+		vk::FrontFace::eClockwise,
+		VK_FALSE
+	);
+	rasterizer.lineWidth = 1.0f;
+
+	// No multisampling for now
+	vk::PipelineMultisampleStateCreateInfo multisampling;
+	multisampling.sampleShadingEnable = VK_FALSE;
+	multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
+
+	// When fragment shader returns a color, it needs to be combined with
+	// what is already in framebuffer. This specifies how that happens.
+	// Contains configuration per attached framebuffer
+	vk::ColorComponentFlags write_mask = vk::ColorComponentFlagBits::eR |
+		vk::ColorComponentFlagBits::eG |
+		vk::ColorComponentFlagBits::eB |
+		vk::ColorComponentFlagBits::eA;
+	vk::PipelineColorBlendAttachmentState blend_attachment;
+	blend_attachment.colorWriteMask = write_mask;
+	blend_attachment.blendEnable = VK_FALSE;
+
+	vk::PipelineColorBlendStateCreateInfo color_blend_info;
+	color_blend_info.logicOpEnable = VK_FALSE;
+	color_blend_info.attachmentCount = 1;
+	color_blend_info.pAttachments = &blend_attachment;
+
+	vk::PipelineLayoutCreateInfo pipeline_layout_info(
+		{},
+		0,
+		nullptr,
+		0,
+		nullptr
+	);
+
+	pipeline_layout_ = device_.createPipelineLayout(pipeline_layout_info);
+
+	vk::GraphicsPipelineCreateInfo graphics_info(
+		{},
+		2,
+		stages,
+		&vert_input,
+		&assembly,
+		{},
+		&vp_state,
+		&rasterizer,
+		&multisampling,
+		{},
+		&color_blend_info,
+		{},
+		pipeline_layout_,
+		render_pass_,
+		0,
+		{}
+	);
+
+	graphics_pipeline_ = device_.createGraphicsPipeline({}, graphics_info);
+
+	device_.destroyShaderModule(frag_module);
+	device_.destroyShaderModule(vert_module);
+}
+
+vk::ShaderModule VkApp::create_shader_module(std::vector<char> code) {
+	vk::ShaderModuleCreateInfo info(
+		{},
+		code.size(),
+		reinterpret_cast<const uint32_t*>(code.data())
+	);
+
+	vk::ShaderModule module = device_.createShaderModule(info);
+
+	return module;
 }

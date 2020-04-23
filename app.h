@@ -48,6 +48,8 @@ private:
 	std::vector<vk::ImageView> swapchain_image_views_;
 
 	vk::RenderPass render_pass_;
+	vk::PipelineLayout pipeline_layout_;
+	vk::Pipeline graphics_pipeline_;
 
 public:
 	VkApp(int width, int height, std::string title, bool validation_enabled=false);
@@ -86,6 +88,8 @@ private:
 	vk::SurfaceFormatKHR select_swap_surface_format(std::vector<vk::SurfaceFormatKHR> formats) const noexcept;
 	vk::PresentModeKHR select_swap_present_mode(std::vector<vk::PresentModeKHR> modes) const noexcept;
 	vk::Extent2D select_swap_extent(vk::SurfaceCapabilitiesKHR capabilities) const noexcept;
+
+	vk::ShaderModule create_shader_module(std::vector<char> code);
 };
 
 #endif

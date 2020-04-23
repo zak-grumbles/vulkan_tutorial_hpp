@@ -27,5 +27,8 @@ target_link_libraries(vk_hpp PUBLIC glfw)
 target_include_directories(vk_hpp PUBLIC ${Vulkan_INCLUDE_DIRS})
 target_link_libraries(vk_hpp PUBLIC ${Vulkan_LIBRARIES})
 
+# C++ Standard
+set_property(TARGET vk_hpp PROPERTY CXX_STANDARD 17)
+
 # Compiler options
-target_compile_options(vk_hpp PRIVATE -g -Wall)
+target_compile_options(vk_hpp PRIVATE -g)
