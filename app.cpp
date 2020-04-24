@@ -2,6 +2,7 @@
 #include "app.h"
 
 #include <algorithm>
+#include <array>
 #include <iostream>
 #include <fstream>
 #include <set>
@@ -79,6 +80,8 @@ VkApp::VkApp(int width, int height, std::string title, bool validation_enabled /
 }
 
 VkApp::~VkApp() {
+	
+	device_.freeCommandBuffers(cmd_pool_, cmd_buffers_);
 
 	device_.destroyCommandPool(cmd_pool_);
 
@@ -134,6 +137,7 @@ void VkApp::init_vulkan() {
 	init_pipeline();
 	init_framebuffers();
 	init_cmd_pool();
+	init_cmd_buffers();
 }
 
 void VkApp::init_instance() {
@@ -685,6 +689,42 @@ void VkApp::init_framebuffers() {
 void VkApp::init_cmd_pool() {
 	vk::CommandPoolCreateInfo pool_info({}, queue_family_indices_.graphics_family.value());
 	cmd_pool_ = device_.createCommandPool(pool_info);
+}
+
+void VkApp::init_cmd_buffers() {
+
+	cmd_buffers_.reserve(swap_framebuffers_.size());
+
+	vk::CommandBufferAllocateInfo alloc_info(cmd_pool_, vk::CommandBufferLevel::ePrimary, swap_framebuffers_.size());
+	cmd_buffers_ = device_.allocateCommandBuffers(alloc_info);
+
+	for (size_t i = 0; i < cmd_buffers_.size(); i++) {
+		vk::CommandBufferBeginInfo beg_info; // default values fine
+
+		cmd_buffers_[i].begin(beg_info);
+
+		vk::Rect2D render_area;
+		render_area.offset = { 0, 0 };
+		render_area.extent = swap_extent_;
+
+		std::array<float, 4> color = { 0.0f, 0.0f, 0.0f, 1.0f };
+		vk::ClearValue clear_color(color);
+
+		vk::RenderPassBeginInfo pass_info(
+			render_pass_,
+			swap_framebuffers_[i],
+			render_area,
+			1,
+			&clear_color
+		);
+
+		cmd_buffers_[i].beginRenderPass(pass_info, vk::SubpassContents::eInline);
+		cmd_buffers_[i].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
+		cmd_buffers_[i].draw(3, 1, 0, 0);
+		cmd_buffers_[i].endRenderPass();
+
+		cmd_buffers_[i].end();
+	}
 }
 
 vk::ShaderModule VkApp::create_shader_module(std::vector<char> code) {

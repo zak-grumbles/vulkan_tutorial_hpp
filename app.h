@@ -54,6 +54,7 @@ private:
 	std::vector<vk::Framebuffer> swap_framebuffers_;
 
 	vk::CommandPool cmd_pool_;
+	std::vector<vk::CommandBuffer> cmd_buffers_;
 
 public:
 	VkApp(int width, int height, std::string title, bool validation_enabled=false);
@@ -83,6 +84,7 @@ private:
 	void init_pipeline();
 	void init_framebuffers();
 	void init_cmd_pool();
+	void init_cmd_buffers();
 
 	std::vector<const char*> get_required_exts() const noexcept;
 
