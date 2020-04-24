@@ -80,6 +80,8 @@ VkApp::VkApp(int width, int height, std::string title, bool validation_enabled /
 
 VkApp::~VkApp() {
 
+	device_.destroyCommandPool(cmd_pool_);
+
 	for (auto framebuf : swap_framebuffers_) {
 		device_.destroyFramebuffer(framebuf);
 	}
@@ -131,6 +133,7 @@ void VkApp::init_vulkan() {
 	init_render_pass();
 	init_pipeline();
 	init_framebuffers();
+	init_cmd_pool();
 }
 
 void VkApp::init_instance() {
@@ -677,6 +680,11 @@ void VkApp::init_framebuffers() {
 			return device_.createFramebuffer(framebuf_info);
 		}
 	);
+}
+
+void VkApp::init_cmd_pool() {
+	vk::CommandPoolCreateInfo pool_info({}, queue_family_indices_.graphics_family.value());
+	cmd_pool_ = device_.createCommandPool(pool_info);
 }
 
 vk::ShaderModule VkApp::create_shader_module(std::vector<char> code) {
