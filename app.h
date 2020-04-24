@@ -62,6 +62,8 @@ private:
 	std::vector<vk::Fence> imgs_in_flight_;
 	size_t current_frame_ = 0;
 
+	bool framebuffer_resized = false;
+
 public:
 	VkApp(int width, int height, std::string title, bool validation_enabled=false);
 	~VkApp();
@@ -74,6 +76,8 @@ public:
 		const VkDebugUtilsMessengerCallbackDataEXT* cb_data,
 		void* user_data
 	);
+
+	static void framebuffer_resize_callback(GLFWwindow* window, int width, int height);
 
 private:
 
@@ -107,6 +111,9 @@ private:
 	vk::ShaderModule create_shader_module(std::vector<char> code);
 
 	void draw_frame();
+
+	void cleanup_swapchain();
+	void recreate_swapchain();
 };
 
 #endif

@@ -1,10 +1,17 @@
 #include "app.h"
 
+#include <iostream>
+
 int main() {
 
 	VkApp* app = new VkApp(800, 600, "Testing", true);
 
-	app->run();
+	try {
+		app->run();
+	}
+	catch (const std::exception& e) {
+		std::cout << e.what() << std::endl;
+	}
 
 	delete app;
 
