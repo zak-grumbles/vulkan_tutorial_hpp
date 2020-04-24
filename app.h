@@ -56,6 +56,12 @@ private:
 	vk::CommandPool cmd_pool_;
 	std::vector<vk::CommandBuffer> cmd_buffers_;
 
+	std::vector<vk::Semaphore> img_available_semaphores_;
+	std::vector<vk::Semaphore> render_finished_semaphores_;
+	std::vector<vk::Fence> in_flight_fences_;
+	std::vector<vk::Fence> imgs_in_flight_;
+	size_t current_frame_ = 0;
+
 public:
 	VkApp(int width, int height, std::string title, bool validation_enabled=false);
 	~VkApp();
@@ -85,6 +91,7 @@ private:
 	void init_framebuffers();
 	void init_cmd_pool();
 	void init_cmd_buffers();
+	void init_sync_objects();
 
 	std::vector<const char*> get_required_exts() const noexcept;
 
@@ -98,6 +105,8 @@ private:
 	vk::Extent2D select_swap_extent(vk::SurfaceCapabilitiesKHR capabilities) const noexcept;
 
 	vk::ShaderModule create_shader_module(std::vector<char> code);
+
+	void draw_frame();
 };
 
 #endif

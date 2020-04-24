@@ -80,8 +80,12 @@ VkApp::VkApp(int width, int height, std::string title, bool validation_enabled /
 }
 
 VkApp::~VkApp() {
-	
-	device_.freeCommandBuffers(cmd_pool_, cmd_buffers_);
+
+	for (size_t i = 0; i < kMaxFramesInFlight; i++) {
+		device_.destroySemaphore(render_finished_semaphores_[i]);
+		device_.destroySemaphore(img_available_semaphores_[i]);
+		device_.destroyFence(in_flight_fences_[i]);
+	}
 
 	device_.destroyCommandPool(cmd_pool_);
 
@@ -118,7 +122,11 @@ VkApp::~VkApp() {
 void VkApp::run() {
 	while (!glfwWindowShouldClose(window_)) {
 		glfwPollEvents();
+
+		draw_frame();
 	}
+
+	device_.waitIdle();
 }
 
 void VkApp::init_vulkan() {
@@ -138,6 +146,7 @@ void VkApp::init_vulkan() {
 	init_framebuffers();
 	init_cmd_pool();
 	init_cmd_buffers();
+	init_sync_objects();
 }
 
 void VkApp::init_instance() {
@@ -727,6 +736,25 @@ void VkApp::init_cmd_buffers() {
 	}
 }
 
+void VkApp::init_sync_objects() {
+	img_available_semaphores_.resize(kMaxFramesInFlight);
+	render_finished_semaphores_.resize(kMaxFramesInFlight);
+	in_flight_fences_.resize(kMaxFramesInFlight);
+	imgs_in_flight_.resize(swapchain_images_.size());
+
+	vk::SemaphoreCreateInfo sem_info;
+
+	vk::FenceCreateInfo fence_info(
+		vk::FenceCreateFlagBits::eSignaled
+	);
+
+	for (size_t i = 0; i < kMaxFramesInFlight; i++) {
+		img_available_semaphores_[i] = device_.createSemaphore(sem_info);
+		render_finished_semaphores_[i] = device_.createSemaphore(sem_info);
+		in_flight_fences_[i] = device_.createFence(fence_info);
+	}
+}
+
 vk::ShaderModule VkApp::create_shader_module(std::vector<char> code) {
 	vk::ShaderModuleCreateInfo info(
 		{},
@@ -737,4 +765,56 @@ vk::ShaderModule VkApp::create_shader_module(std::vector<char> code) {
 	vk::ShaderModule module = device_.createShaderModule(info);
 
 	return module;
+}
+
+void VkApp::draw_frame() {
+	device_.waitForFences(in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
+
+	uint32_t img_index;
+	auto next_img = device_.acquireNextImageKHR(swapchain_, UINT64_MAX, img_available_semaphores_[current_frame_], {});
+	img_index = next_img.value;
+
+	if ((VkFence)imgs_in_flight_[img_index] != VK_NULL_HANDLE) {
+		device_.waitForFences(imgs_in_flight_[img_index], VK_TRUE, UINT64_MAX);
+	}
+	imgs_in_flight_[img_index] = in_flight_fences_[current_frame_];
+
+	vk::Semaphore wait_sems[] = {
+		img_available_semaphores_[current_frame_]
+	};
+
+	vk::PipelineStageFlags wait_stages = {
+		vk::PipelineStageFlagBits::eColorAttachmentOutput
+	};
+
+	vk::Semaphore signal_sems[] = {
+		render_finished_semaphores_[current_frame_]
+	};
+
+	vk::SubmitInfo submit(
+		1,
+		wait_sems,
+		&wait_stages,
+		1,
+		&cmd_buffers_[img_index],
+		1,
+		signal_sems
+	);
+
+	device_.resetFences(in_flight_fences_[current_frame_]);
+
+	graphics_queue_.submit(submit, in_flight_fences_[current_frame_]);
+
+	vk::SwapchainKHR chains[] = { swapchain_ };
+	vk::PresentInfoKHR present_info(
+		1,
+		signal_sems,
+		1,
+		chains,
+		&img_index
+	);
+
+	present_queue_.presentKHR(present_info);
+
+	current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
 }
