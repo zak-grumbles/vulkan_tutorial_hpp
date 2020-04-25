@@ -291,7 +291,7 @@ bool VkApp::supports_extensions(vk::PhysicalDevice device) const noexcept {
 	std::set<std::string> required_exts(kDeviceExtensions.begin(), kDeviceExtensions.end());
 
 	for (const vk::ExtensionProperties& ext : available_exts) {
-		required_exts.erase(ext.extensionName);
+        required_exts.erase(static_cast<std::string>(ext.extensionName));
 	}
 
 	return required_exts.empty();
@@ -436,10 +436,8 @@ vk::Extent2D VkApp::select_swap_extent(vk::SurfaceCapabilitiesKHR capabilities) 
 		int width, height;
 		glfwGetFramebufferSize(window_, &width, &height);
 
-		chosen_extent = {
-			static_cast<uint32_t>(width),
-			static_cast<uint32_t>(height)
-		};
+        chosen_extent.setWidth(static_cast<uint32_t>(width));
+        chosen_extent.setHeight(static_cast<uint32_t>(height));
 
 		chosen_extent.width = std::max(capabilities.minImageExtent.width,
 			std::min(capabilities.maxImageExtent.width, chosen_extent.width));
@@ -705,7 +703,8 @@ void VkApp::init_cmd_buffers() {
 		cmd_buffers_[i].begin(beg_info);
 
 		vk::Rect2D render_area;
-		render_area.offset = { 0, 0 };
+        render_area.offset.setX(0);
+        render_area.offset.setY(0);
 		render_area.extent = swap_extent_;
 
 		std::array<float, 4> color = { 0.0f, 0.0f, 0.0f, 1.0f };
