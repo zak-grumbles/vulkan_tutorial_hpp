@@ -845,6 +845,7 @@ void VkApp::cleanup_swapchain() {
 	for (size_t i = 0; i < swapchain_image_views_.size(); i++) {
 		device_.destroyFramebuffer(swap_framebuffers_[i]);
 	}
+    swap_framebuffers_.resize(0);
 
 	device_.freeCommandBuffers(cmd_pool_, cmd_buffers_);
 
@@ -855,6 +856,7 @@ void VkApp::cleanup_swapchain() {
 	for (size_t i = 0; i < swapchain_image_views_.size(); i++) {
 		device_.destroyImageView(swapchain_image_views_[i]);
 	}
+    swapchain_image_views_.resize(0);
 
 	device_.destroySwapchainKHR(swapchain_);
 }
