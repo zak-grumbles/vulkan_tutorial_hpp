@@ -69,6 +69,8 @@ private:
 	vk::CommandPool cmd_pool_;
 	std::vector<vk::CommandBuffer> cmd_buffers_;
 
+	vk::CommandPool copy_pool_;
+
 	std::vector<vk::Semaphore> img_available_semaphores_;
 	std::vector<vk::Semaphore> render_finished_semaphores_;
 	std::vector<vk::Fence> in_flight_fences_;
@@ -130,6 +132,19 @@ private:
 	void recreate_swapchain();
 
 	uint32_t find_memory_type(uint32_t type_filter, vk::MemoryPropertyFlags props);
+
+	void create_buffer(
+		vk::DeviceSize size,
+		vk::BufferUsageFlags usage,
+		vk::MemoryPropertyFlags props,
+		vk::Buffer& buffer, vk::DeviceMemory& buffer_memory
+	);
+
+	void copy_buffer(
+		vk::Buffer src,
+		vk::Buffer dest,
+		vk::DeviceSize size
+	);
 };
 
 #endif
