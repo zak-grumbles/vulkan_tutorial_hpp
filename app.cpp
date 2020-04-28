@@ -1,8 +1,13 @@
 #define NOMINMAX
 #include "app.h"
 
+#define GLM_FORCE_RADIANS
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <iostream>
 #include <fstream>
 #include <set>
@@ -132,6 +137,8 @@ VkApp::~VkApp() {
         device_.destroyFence(in_flight_fences_[i]);
     }
 
+    device_.destroyDescriptorSetLayout(descriptor_set_layout_);
+
     device_.destroyBuffer(index_buffer_);
     device_.freeMemory(index_buffer_memory_);
     device_.destroyBuffer(vertex_buffer_);
@@ -177,11 +184,15 @@ void VkApp::init_vulkan() {
     init_swapchain();
     init_image_views();
     init_render_pass();
+    init_descriptor_set_layout();
     init_pipeline();
     init_framebuffers();
     init_cmd_pool();
     init_vertex_buffers();
     init_index_buffers();
+    init_uniform_buffers();
+    init_descriptor_pool();
+    allocate_descriptor_sets();
     init_cmd_buffers();
     init_sync_objects();
 }
@@ -579,6 +590,23 @@ void VkApp::init_render_pass() {
     render_pass_ = device_.createRenderPass(info);
 }
 
+void VkApp::init_descriptor_set_layout() {
+    vk::DescriptorSetLayoutBinding uboLayoutBinding(
+        0,                                      // binding location
+        vk::DescriptorType::eUniformBuffer,     // type
+        1,                                      // descriptor count
+        vk::ShaderStageFlagBits::eVertex        // stages it is visible in
+    );
+
+    vk::DescriptorSetLayoutCreateInfo layout_info(
+        {},                 // flags
+        1,                  // # of bindings
+        &uboLayoutBinding   // layout
+    );
+
+    descriptor_set_layout_ = device_.createDescriptorSetLayout(layout_info);
+}
+
 void VkApp::init_pipeline() {
 
     auto vert_code = read_file("vert.spv");
@@ -654,7 +682,7 @@ void VkApp::init_pipeline() {
         VK_FALSE,
         vk::PolygonMode::eFill,
         vk::CullModeFlagBits::eBack,
-        vk::FrontFace::eClockwise,
+        vk::FrontFace::eCounterClockwise,
         VK_FALSE
     );
     rasterizer.lineWidth = 1.0f;
@@ -682,8 +710,8 @@ void VkApp::init_pipeline() {
 
     vk::PipelineLayoutCreateInfo pipeline_layout_info(
         {},
-        0,
-        nullptr,
+        1,
+        &descriptor_set_layout_,
         0,
         nullptr
     );
@@ -817,6 +845,77 @@ void VkApp::init_index_buffers() {
     device_.freeMemory(staging_memory);
 }
 
+void VkApp::init_uniform_buffers() {
+    vk::DeviceSize buf_size = sizeof(UniformBufferObject);
+
+    uniform_buffers_.resize(swapchain_images_.size());
+    uniform_buffers_memory_.resize(swapchain_images_.size());
+
+    for (size_t i = 0; i < uniform_buffers_.size(); i++) {
+        create_buffer(
+            buf_size,
+            vk::BufferUsageFlagBits::eUniformBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            uniform_buffers_[i],
+            uniform_buffers_memory_[i]
+        );
+    }
+}
+
+void VkApp::init_descriptor_pool() {
+
+    vk::DescriptorPoolSize pool_size(
+        vk::DescriptorType::eUniformBuffer,             // type
+        static_cast<uint32_t>(uniform_buffers_.size())  // size
+    );
+
+    vk::DescriptorPoolCreateInfo pool_info(
+        {},
+        static_cast<uint32_t>(uniform_buffers_.size()), // max # of descriptor sets that can be allocated from pool
+        1,          // # of pools
+        &pool_size  // pools
+    );
+
+    descriptor_pool_ = device_.createDescriptorPool(pool_info);
+}
+
+void VkApp::allocate_descriptor_sets() {
+
+    std::vector<vk::DescriptorSetLayout> layouts(uniform_buffers_.size(), descriptor_set_layout_);
+
+    vk::DescriptorSetAllocateInfo alloc_info(
+        descriptor_pool_,                                   // pool to allocate from
+        static_cast<uint32_t>(uniform_buffers_.size()),     // # of sets to allocate
+        layouts.data()                                      // set layout
+    );
+
+    descriptor_sets_.reserve(uniform_buffers_.size());
+    descriptor_sets_ = device_.allocateDescriptorSets(alloc_info);
+
+    for (size_t i = 0; i < descriptor_sets_.size(); i++) {
+        
+        // Describes buffer relating to descriptor set
+        vk::DescriptorBufferInfo buf_info(
+            uniform_buffers_[i],            // backing buffer
+            0,                              // offset
+            sizeof(UniformBufferObject)     // range
+        );
+
+        // used to update values of descriptor sets
+        vk::WriteDescriptorSet write(
+            descriptor_sets_[i],                // destination descriptor set
+            0,                                  // binding location
+            0,                                  // dest array element (not array, so 0)
+            1,                                  // # of descriptors to update
+            vk::DescriptorType::eUniformBuffer, // type
+            nullptr,                            // image info (none)
+            &buf_info                           // buffer info
+        );
+
+        device_.updateDescriptorSets(1, &write, 0, nullptr);
+    }
+}
+
 uint32_t VkApp::find_memory_type(uint32_t type_filter, vk::MemoryPropertyFlags props) {
 
     vk::PhysicalDeviceMemoryProperties mem_properties = physical_device_.getMemoryProperties();
@@ -869,6 +968,15 @@ void VkApp::init_cmd_buffers() {
         cmd_buffers_[i].bindVertexBuffers(0, vertex_buffers, offset);
         cmd_buffers_[i].bindIndexBuffer(index_buffer_, 0, vk::IndexType::eUint16);
 
+        cmd_buffers_[i].bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics,   // bind point
+            pipeline_layout_,                   // pipeline layout
+            0,                                  // first set index
+            1,                                  // # of sets
+            &descriptor_sets_[i],               // sets to bind
+            0,                                  // dynamic offset count
+            nullptr                             // dynamic offsets
+        );
         uint32_t index_count = static_cast<uint32_t>(kIndices.size());
         cmd_buffers_[i].drawIndexed(index_count, 1, 0, 0, 0);
         cmd_buffers_[i].endRenderPass();
@@ -942,6 +1050,8 @@ void VkApp::draw_frame() {
         render_finished_semaphores_[current_frame_]
     };
 
+    update_uniform_buffer(img_index);
+
     vk::SubmitInfo submit(
         1,
         wait_sems,
@@ -988,6 +1098,9 @@ void VkApp::recreate_swapchain() {
     init_render_pass();
     init_pipeline();
     init_framebuffers();
+    init_uniform_buffers();
+    init_descriptor_pool();
+    allocate_descriptor_sets();
     init_cmd_buffers();
 }
 
@@ -1009,6 +1122,13 @@ void VkApp::cleanup_swapchain() {
     swapchain_image_views_.resize(0);
 
     device_.destroySwapchainKHR(swapchain_);
+
+    for (size_t i = 0; i < uniform_buffers_.size(); i++) {
+        device_.destroyBuffer(uniform_buffers_[i]);
+        device_.freeMemory(uniform_buffers_memory_[i]);
+    }
+
+    device_.destroyDescriptorPool(descriptor_pool_);
 }
 
 void VkApp::create_buffer(
@@ -1021,7 +1141,7 @@ void VkApp::create_buffer(
     // Create the buffer
     vk::BufferCreateInfo buf_info(
         {},
-        sizeof(kVertices[0]) * kVertices.size(),
+        size,
         usage,
         vk::SharingMode::eExclusive
     );
@@ -1087,4 +1207,42 @@ void VkApp::copy_buffer(
     graphics_queue_.waitIdle();
 
     device_.freeCommandBuffers(copy_pool_, 1, &cmd_buffer);
+}
+
+void VkApp::update_uniform_buffer(uint32_t current_img) {
+    // gets set first time method is called, never again
+    static auto start_time = std::chrono::high_resolution_clock::now();
+
+    auto current_time = std::chrono::high_resolution_clock::now();
+
+    // delta time in seconds
+    float delta = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
+
+    UniformBufferObject ubo{};
+
+    ubo.model = glm::rotate(
+        glm::mat4(1.0f),                // starting matrix (identity)
+        delta * glm::radians(90.0f),    // radians to rotate by based on delta time
+        glm::vec3(0.0f, 0.0f, 1.0f)     // y-axis to rotate around
+    );
+
+    ubo.view = glm::lookAt(
+        glm::vec3(2.0f, 2.0f, 2.0f),    // eye position
+        glm::vec3(0.0f, 0.0f, 0.0f),    // look at center
+        glm::vec3(0.0f, 0.0f, 1.0f)     // up vector
+    );
+
+    ubo.proj = glm::perspective(
+        glm::radians(45.0f),                                // vertical field of view
+        swap_extent_.width / (float)swap_extent_.height,    // aspect ratio
+        0.1f,                                               // near plane
+        10.0f                                               // far plane
+	);
+
+    // Fix glm y coordinates. Originally for opengl
+    ubo.proj[1][1] *= -1;
+
+    void* data = device_.mapMemory(uniform_buffers_memory_[current_img], 0, sizeof(ubo));
+    memcpy(data, &ubo, sizeof(ubo));
+    device_.unmapMemory(uniform_buffers_memory_[current_img]);
 }

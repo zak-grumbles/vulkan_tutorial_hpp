@@ -18,6 +18,12 @@ struct Vertex {
 	static std::array<vk::VertexInputAttributeDescription, 2> attribute_descriptions();
 };
 
+struct UniformBufferObject {
+	alignas(16)glm::mat4 model;
+	alignas(16)glm::mat4 view;
+	alignas(16)glm::mat4 proj;
+};
+
 struct QueueFamilies {
 	std::optional<uint32_t> graphics_family;
 	std::optional<uint32_t> present_family;
@@ -58,6 +64,11 @@ private:
 	std::vector<vk::ImageView> swapchain_image_views_;
 
 	vk::RenderPass render_pass_;
+
+	vk::DescriptorSetLayout descriptor_set_layout_;
+	vk::DescriptorPool descriptor_pool_;
+	std::vector<vk::DescriptorSet> descriptor_sets_;
+
 	vk::PipelineLayout pipeline_layout_;
 	vk::Pipeline graphics_pipeline_;
 
@@ -67,6 +78,9 @@ private:
 	vk::DeviceMemory vertex_buffer_memory_;
 	vk::Buffer index_buffer_;
 	vk::DeviceMemory index_buffer_memory_;
+
+	std::vector<vk::Buffer> uniform_buffers_;
+	std::vector<vk::DeviceMemory> uniform_buffers_memory_;
 
 	vk::CommandPool cmd_pool_;
 	std::vector<vk::CommandBuffer> cmd_buffers_;
@@ -108,11 +122,15 @@ private:
 	void init_swapchain();
 	void init_image_views();
 	void init_render_pass();
+	void init_descriptor_set_layout();
 	void init_pipeline();
 	void init_framebuffers();
 	void init_cmd_pool();
 	void init_vertex_buffers();
 	void init_index_buffers();
+	void init_uniform_buffers();
+	void init_descriptor_pool();
+	void allocate_descriptor_sets();
 	void init_cmd_buffers();
 	void init_sync_objects();
 
@@ -148,6 +166,9 @@ private:
 		vk::Buffer dest,
 		vk::DeviceSize size
 	);
+
+	void update_uniform_buffer(uint32_t current_img);
+
 };
 
 #endif
