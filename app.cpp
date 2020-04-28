@@ -10,9 +10,14 @@
 const int kMaxFramesInFlight = 2;
 
 const std::vector<Vertex> kVertices = {
-    {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+};
+
+const std::vector<uint16_t> kIndices = {
+    0, 1, 2, 2, 3, 0
 };
 
 const std::vector<const char*> kValidationLayers = {
@@ -121,16 +126,18 @@ VkApp::VkApp(int width, int height, std::string title, bool validation_enabled /
 VkApp::~VkApp() {
     cleanup_swapchain();
 
-
     for (size_t i = 0; i < kMaxFramesInFlight; i++) {
         device_.destroySemaphore(render_finished_semaphores_[i]);
         device_.destroySemaphore(img_available_semaphores_[i]);
         device_.destroyFence(in_flight_fences_[i]);
     }
 
+    device_.destroyBuffer(index_buffer_);
+    device_.freeMemory(index_buffer_memory_);
     device_.destroyBuffer(vertex_buffer_);
     device_.freeMemory(vertex_buffer_memory_);
 
+    device_.destroyCommandPool(copy_pool_);
     device_.destroyCommandPool(cmd_pool_);
 
     device_.destroy();
@@ -174,6 +181,7 @@ void VkApp::init_vulkan() {
     init_framebuffers();
     init_cmd_pool();
     init_vertex_buffers();
+    init_index_buffers();
     init_cmd_buffers();
     init_sync_objects();
 }
@@ -778,6 +786,37 @@ void VkApp::init_vertex_buffers() {
     device_.freeMemory(staging_memory);
 }
 
+void VkApp::init_index_buffers() {
+    vk::DeviceSize buf_size = sizeof(kIndices[0]) * kIndices.size();
+
+    vk::Buffer staging_buf;
+    vk::DeviceMemory staging_memory;
+    create_buffer(
+        buf_size,
+        vk::BufferUsageFlagBits::eTransferSrc,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        staging_buf,
+        staging_memory
+    );
+
+    void* data = device_.mapMemory(staging_memory, 0, buf_size);
+    memcpy(data, kIndices.data(), buf_size);
+    device_.unmapMemory(staging_memory);
+
+    create_buffer(
+        buf_size,
+        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+        index_buffer_,
+        index_buffer_memory_
+    );
+
+    copy_buffer(staging_buf, index_buffer_, buf_size);
+
+    device_.destroyBuffer(staging_buf);
+    device_.freeMemory(staging_memory);
+}
+
 uint32_t VkApp::find_memory_type(uint32_t type_filter, vk::MemoryPropertyFlags props) {
 
     vk::PhysicalDeviceMemoryProperties mem_properties = physical_device_.getMemoryProperties();
@@ -828,8 +867,10 @@ void VkApp::init_cmd_buffers() {
         std::array<vk::DeviceSize, 1> offset = { 0 };
 
         cmd_buffers_[i].bindVertexBuffers(0, vertex_buffers, offset);
+        cmd_buffers_[i].bindIndexBuffer(index_buffer_, 0, vk::IndexType::eUint16);
 
-        cmd_buffers_[i].draw(static_cast<uint32_t>(kVertices.size()), 1, 0, 0);
+        uint32_t index_count = static_cast<uint32_t>(kIndices.size());
+        cmd_buffers_[i].drawIndexed(index_count, 1, 0, 0, 0);
         cmd_buffers_[i].endRenderPass();
 
         cmd_buffers_[i].end();
@@ -981,7 +1022,7 @@ void VkApp::create_buffer(
     vk::BufferCreateInfo buf_info(
         {},
         sizeof(kVertices[0]) * kVertices.size(),
-        vk::BufferUsageFlagBits::eVertexBuffer,
+        usage,
         vk::SharingMode::eExclusive
     );
 
@@ -993,7 +1034,7 @@ void VkApp::create_buffer(
     // Actually allocate memory for buffer
     uint32_t mem_type_index = find_memory_type(
         mem_requirements.memoryTypeBits,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+        props
     );
 
     vk::MemoryAllocateInfo alloc_info(

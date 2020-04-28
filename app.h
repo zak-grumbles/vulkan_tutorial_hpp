@@ -65,6 +65,8 @@ private:
 
 	vk::Buffer vertex_buffer_;
 	vk::DeviceMemory vertex_buffer_memory_;
+	vk::Buffer index_buffer_;
+	vk::DeviceMemory index_buffer_memory_;
 
 	vk::CommandPool cmd_pool_;
 	std::vector<vk::CommandBuffer> cmd_buffers_;
@@ -110,6 +112,7 @@ private:
 	void init_framebuffers();
 	void init_cmd_pool();
 	void init_vertex_buffers();
+	void init_index_buffers();
 	void init_cmd_buffers();
 	void init_sync_objects();
 
