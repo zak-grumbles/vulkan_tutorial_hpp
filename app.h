@@ -3,10 +3,20 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-
+#include <glm/glm.hpp>
 #include <vulkan/vulkan.hpp>
 
+#include <array>
 #include <optional>
+
+struct Vertex {
+	glm::vec2 pos;
+	glm::vec3 color;
+
+	static vk::VertexInputBindingDescription binding_description();
+
+	static std::array<vk::VertexInputAttributeDescription, 2> attribute_descriptions();
+};
 
 struct QueueFamilies {
 	std::optional<uint32_t> graphics_family;
@@ -53,6 +63,9 @@ private:
 
 	std::vector<vk::Framebuffer> swap_framebuffers_;
 
+	vk::Buffer vertex_buffer_;
+	vk::DeviceMemory vertex_buffer_memory_;
+
 	vk::CommandPool cmd_pool_;
 	std::vector<vk::CommandBuffer> cmd_buffers_;
 
@@ -94,6 +107,7 @@ private:
 	void init_pipeline();
 	void init_framebuffers();
 	void init_cmd_pool();
+	void init_vertex_buffers();
 	void init_cmd_buffers();
 	void init_sync_objects();
 
@@ -114,6 +128,8 @@ private:
 
 	void cleanup_swapchain();
 	void recreate_swapchain();
+
+	uint32_t find_memory_type(uint32_t type_filter, vk::MemoryPropertyFlags props);
 };
 
 #endif

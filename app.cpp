@@ -9,6 +9,12 @@
 
 const int kMaxFramesInFlight = 2;
 
+const std::vector<Vertex> kVertices = {
+	{{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
+	{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+	{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+};
+
 const std::vector<const char*> kValidationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 };
@@ -16,6 +22,38 @@ const std::vector<const char*> kValidationLayers = {
 const std::vector<const char*> kDeviceExtensions = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
+
+vk::VertexInputBindingDescription Vertex::binding_description() {
+
+	// Describes how to load data
+	vk::VertexInputBindingDescription desc(
+		0,								// only have one binding, so index is 0
+		sizeof(Vertex),					// # bytes from one entry to next
+		vk::VertexInputRate::eVertex	// Move to next entry after each vertex (can also be instance)
+	);
+
+	return desc;
+}
+
+std::array<vk::VertexInputAttributeDescription, 2> Vertex::attribute_descriptions() {
+
+	// describes how to convert vertex data into the locations in shaders
+	std::array<vk::VertexInputAttributeDescription, 2> descriptions;
+
+	// inPosition
+	descriptions[0].binding = 0;
+	descriptions[0].location = 0;
+	descriptions[0].format = vk::Format::eR32G32Sfloat;
+	descriptions[0].offset = offsetof(Vertex, pos);
+
+	// inColor
+	descriptions[1].binding = 0;
+	descriptions[1].location = 1;
+	descriptions[1].format = vk::Format::eR32G32B32Sfloat;
+	descriptions[1].offset = offsetof(Vertex, color);
+
+	return descriptions;
+}
 
 VkResult create_dbg_utils_messenger(
 	VkInstance instance,
@@ -83,11 +121,15 @@ VkApp::VkApp(int width, int height, std::string title, bool validation_enabled /
 VkApp::~VkApp() {
 	cleanup_swapchain();
 
+
 	for (size_t i = 0; i < kMaxFramesInFlight; i++) {
 		device_.destroySemaphore(render_finished_semaphores_[i]);
 		device_.destroySemaphore(img_available_semaphores_[i]);
 		device_.destroyFence(in_flight_fences_[i]);
 	}
+
+	device_.destroyBuffer(vertex_buffer_);
+	device_.freeMemory(vertex_buffer_memory_);
 
 	device_.destroyCommandPool(cmd_pool_);
 
@@ -131,6 +173,7 @@ void VkApp::init_vulkan() {
 	init_pipeline();
 	init_framebuffers();
 	init_cmd_pool();
+	init_vertex_buffers();
 	init_cmd_buffers();
 	init_sync_objects();
 }
@@ -553,13 +596,16 @@ void VkApp::init_pipeline() {
 		frag_stage
 	};
 
+	auto vert_binding_desc = Vertex::binding_description();
+	auto vert_attr_desc = Vertex::attribute_descriptions();
+
 	// Describes how vertex data is passed into vertex shader
 	vk::PipelineVertexInputStateCreateInfo vert_input(
 		{},
-		0,
-		nullptr,
-		0,
-		nullptr
+		1,
+		&vert_binding_desc,
+		static_cast<uint32_t>(vert_attr_desc.size()),
+		vert_attr_desc.data()
 	);
 
 	// Describes geometry drawn from vertices
@@ -690,6 +736,60 @@ void VkApp::init_cmd_pool() {
 	cmd_pool_ = device_.createCommandPool(pool_info);
 }
 
+void VkApp::init_vertex_buffers() {
+
+	// Create the buffer
+	vk::BufferCreateInfo buf_info(
+		{},
+		sizeof(kVertices[0]) * kVertices.size(),
+		vk::BufferUsageFlagBits::eVertexBuffer,
+		vk::SharingMode::eExclusive
+	);
+
+	 vertex_buffer_ = device_.createBuffer(buf_info);
+
+	 // Determine our memory requirements
+	 vk::MemoryRequirements mem_requirements = device_.getBufferMemoryRequirements(vertex_buffer_);
+
+	 // Actually allocate memory for buffer
+	 uint32_t mem_type_index = find_memory_type(
+		 mem_requirements.memoryTypeBits,
+		 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+	 );
+
+	 vk::MemoryAllocateInfo alloc_info(
+		 mem_requirements.size,
+		 mem_type_index
+	 );
+
+
+	 vk::ResultValueType<vk::DeviceMemory> test;
+	 vertex_buffer_memory_ = device_.allocateMemory(alloc_info);
+
+	 // Associate buffer & memory
+	 device_.bindBufferMemory(vertex_buffer_, vertex_buffer_memory_, 0);
+
+	 // Map & copy verts into memory
+	 void* data = device_.mapMemory(vertex_buffer_memory_, 0, buf_info.size);
+	 memcpy(data, kVertices.data(), (size_t)buf_info.size);
+	 device_.unmapMemory(vertex_buffer_memory_);
+}
+
+uint32_t VkApp::find_memory_type(uint32_t type_filter, vk::MemoryPropertyFlags props) {
+
+	vk::PhysicalDeviceMemoryProperties mem_properties = physical_device_.getMemoryProperties();
+
+	for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
+		bool props_met = (mem_properties.memoryTypes[i].propertyFlags & props) == props;
+
+		if (type_filter & (1 << i) && props_met) {
+			return i;
+		}
+	}
+
+	throw std::runtime_error("Failed to find suitable memory type");
+}
+
 void VkApp::init_cmd_buffers() {
 
 	cmd_buffers_.reserve(swap_framebuffers_.size());
@@ -720,7 +820,13 @@ void VkApp::init_cmd_buffers() {
 
 		cmd_buffers_[i].beginRenderPass(pass_info, vk::SubpassContents::eInline);
 		cmd_buffers_[i].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
-		cmd_buffers_[i].draw(3, 1, 0, 0);
+
+		std::array<vk::Buffer, 1> vertex_buffers = { vertex_buffer_ };
+		std::array<vk::DeviceSize, 1> offset = { 0 };
+
+		cmd_buffers_[i].bindVertexBuffers(0, vertex_buffers, offset);
+
+		cmd_buffers_[i].draw(static_cast<uint32_t>(kVertices.size()), 1, 0, 0);
 		cmd_buffers_[i].endRenderPass();
 
 		cmd_buffers_[i].end();
